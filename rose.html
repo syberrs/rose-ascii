@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<title>Tom le plus bo</title>
+<style>
+  html, body { margin:0; height:100%; background:#000; color:#ddd; font-family:"Courier New",monospace; overflow:hidden; }
+  body { display:flex; flex-direction:column; align-items:center; justify-content:center; }
+  pre { margin:0; white-space:pre; }
+  #rose { font-size:7px; line-height:7px; }
+  #info { margin-top:8px; font-size:11px; color:#4a4045; letter-spacing:2px; }
+</style>
+</head>
+<body>
+<pre id="rose"></pre>
+<div id="info"></div>
+
+<script>
+const DUREE = 60;
+const W = 180, H = 120;
+const CX = 90, CY = 44;
+const RAMP = " .`'^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$";
+const RN = RAMP.length - 1;
+const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
+const lerp = (a,b,t) => a + (b-a)*t;
+const ease = t => t*t*(3-2*t);
+const hash = n => { const s = Math.sin(n*127.1+311.7)*43758.5453; return s - Math.floor(s); };
+
+const NP = 64, GOLD = 2.399963;
+const petals = [];
+for (let i = 0; i < NP; i++) {
+  const f = i/(NP-1);
+  petals.push({
+    f, ang: i*GOLD,
+    delay: (1-f)*0.5,
+    size: lerp(0.34, 1.0, Math.pow(f, 0.78)),
+    width: lerp(0.5, 1.08, f)*(0.9+hash(i)*0.2),
+    curl: lerp(0.2, 1.0, f)*(0.85+hash(i+50)*0.3),
+    hue: hash(i+9)
+  });
+}
+
+function buildFrame(open, now) {
+  const L = new Float32Array(W*H);
+  const Z = new Float32Array(W*H).fill(-1e9);
+  const C = new Uint8Array(W*H);
+  const T = new Float32Array(W*H);
+  const sway = Math.sin(now/1800)*0.8;
+  const breathe = 1 + Math.sin(now/1300)*0.008;
+
+  const plot = (x, y, z, lum, cls, tone) => {
+    const xi = Math.round(x), yi = Math.round(y);
+    if (xi<0 || xi>=W || yi<0 || yi>=H) return;
+    const k = yi*W+xi;
+    if (z > Z[k]) { Z[k]=z; L[k]=clamp(lum,0,1); C[k]=cls; T[k]=tone; }
+  };
+
+  /* tige */
+  for (let s = 0; s < 1; s += 0.0025) {
+    const yy = CY + 10 + s*(H-CY-14);
+    const xx = CX + sway*s*s*3 + Math.sin(s*3)*2.2*s;
+    const wd = lerp(2.4, 3.2, s);
+    for (let dx = -wd; dx <= wd; dx += 0.4) {
+      const n = dx/wd;
+      const lum = 0.3 + 0.5*Math.sqrt(Math.max(0, 1-n*n))*(0.6+0.4*(1-n)*0.5+0.2);
+      plot(xx+dx, yy, 10, lum, 2, 0.35+0.4*Math.sqrt(Math.max(0,1-n*n)));
+    }
+    /* epines */
+    if (Math.abs((s*40)%7) < 0.1) {
+      const side = hash(Math.floor(s*40)) > 0.5 ? 1 : -1;
+      for (let k = 1; k <= 3; k++) plot(xx+side*(wd+k), yy-k*0.6, 11, 0.8, 3, 0.5);
+    }
+  }
+
+  /* feuilles */
+  const feuille = (sy, dir, taille) => {
+    const baseY = CY + 10 + sy*(H-CY-14);
+    const baseX = CX + sway*sy*sy*3 + Math.sin(sy*3)*2.2*sy;
+    for (let t = 0; t <= 1; t += 0.01) {
+      const len = t*taille;
+      const px = baseX + dir*len;
+      const py = baseY - Math.sin(t*Math.PI*0.9)*taille*0.28 + t*t*taille*0.15;
+      const wid = Math.sin(t*Math.PI)*taille*0.13;
+      for (let w = -wid; w <= wid; w += 0.35) {
+        const n = wid > 0 ? w/wid : 0;
+        const nervure = Math.abs(n) < 0.12 ? 0.25 : 0;
+        const lum = 0.28 + 0.45*(1-Math.abs(n)) + nervure;
+        plot(px, py+w, 12+t, lum, 2, 0.3+0.6*(1-Math.abs(n)));
+      }
+    }
+  };
+  feuille(0.35, -1, 26);
+  feuille(0.6, 1, 30);
+
+  /* petales */
+  const sorted = petals.slice().sort((a,b) => a.f - b.f);
+  for (const p of sorted) {
+    const local = clamp((open - p.delay*0.6)/0.6, 0, 1);
+    const o = ease(local);
+    const R = p.size*30*breathe*lerp(0.55, 1, o);
+    const spread = lerp(0.12, 1.15, o)*lerp(0.5, 1, p.f);
+    const ph = p.ang + sway*0.02;
+    for (let u = 0; u <= 1; u += 0.014) {
+      const widU = Math.sin(Math.pow(u, 0.7)*Math.PI)*p.width*R*0.55;
+      const rr = u*R;
+      const lift = Math.sin(u*Math.PI*0.5)*spread;
+      const curl = p.curl*o*Math.pow(u, 3)*R*0.35;
+      for (let v = -1; v <= 1; v += 0.035) {
+        const lat = v*widU;
+        const bx = Math.cos(ph)*lat*0.9 + Math.sin(ph)*rr*lift*0.55;
+        const by = -rr*(1-lift*0.55)*0.9 + curl + Math.abs(v)*widU*0.12*o;
+        const bz = Math.cos(ph)*rr*lift + p.f*5;
+        const nx = Math.sin(ph+v*0.7);
+        const lum = clamp(0.2 + 0.5*(0.5+0.5*nx) + 0.25*(1-u)*0.6 + 0.2*(1-Math.abs(v)) - 0.12*Math.abs(v)*u, 0, 1);
+        const veine = (Math.abs(Math.sin(v*9 + u*3)) < 0.06) ? -0.08 : 0;
+        const bord = (u > 0.9 || Math.abs(v) > 0.93) ? 0.1 : 0;
+        plot(CX + bx, CY + by + R*0.28, bz + u*3, lum + veine + bord, 1, clamp(0.25 + 0.6*u*u + p.hue*0.15 + 0.2*(1-Math.abs(v)), 0, 1));
+      }
+    }
+  }
+
+  /* coeur du bouton */
+  const coeur = 1 - open;
+  if (coeur > 0.05) {
+    for (let a = 0; a < 6.283*3; a += 0.12) {
+      const r = a*0.9*coeur;
+      plot(CX + Math.cos(a)*r*0.9, CY + 8 + Math.sin(a)*r*0.5, 90 + a, 0.6, 1, 0.3);
+    }
+  }
+
+  /* gouttes de rosee */
+  if (open > 0.6) {
+    for (let d = 0; d < 7; d++) {
+      const gx = CX + (hash(d+3)-0.5)*44;
+      const gy = CY + 8 + (hash(d+7)-0.5)*20;
+      const tw = 0.5 + 0.5*Math.sin(now/400 + d*2);
+      plot(gx, gy, 100, 0.7 + tw*0.3, 4, 1);
+    }
+  }
+
+  /* petales qui tombent */
+  if (open > 0.97) {
+    for (let d = 0; d < 4; d++) {
+      const ph = ((now/9000) + d*0.25) % 1;
+      const fx = CX + (d-1.5)*22 + Math.sin(ph*9 + d)*8;
+      const fy = CY + 30 + ph*(H-CY-34);
+      for (let i = -2; i <= 2; i++) for (let j = -1; j <= 1; j++) plot(fx+i, fy+j, 50, 0.55 - ph*0.3, 1, 0.5);
+    }
+  }
+
+  const colorFor = (cls, t) => {
+    if (cls === 1) return `rgb(${Math.round(lerp(120,255,t))},${Math.round(lerp(8,110,t*t))},${Math.round(lerp(25,125,t*t))})`;
+    if (cls === 2) return `rgb(${Math.round(lerp(14,90,t))},${Math.round(lerp(60,195,t))},${Math.round(lerp(26,85,t))})`;
+    if (cls === 3) return "rgb(215,205,175)";
+    return "rgb(235,248,255)";
+  };
+
+  let html = "";
+  for (let y = 0; y < H; y++) {
+    let line = "", cur = null;
+    for (let x = 0; x < W; x++) {
+      const k = y*W+x;
+      const lum = L[k];
+      if (Z[k] < -1e8 || lum < 0.03) { if (cur !== null) { line += "</span>"; cur = null; } line += " "; continue; }
+      let ch = RAMP[clamp(Math.floor(lum*RN), 0, RN)];
+      if (C[k] === 4) ch = lum > 0.6 ? "o" : "°";
+      const col = colorFor(C[k], T[k]);
+      if (col !== cur) { if (cur !== null) line += "</span>"; line += `<span style="color:${col}">`; cur = col; }
+      line += ch === "<" ? "&lt;" : ch === ">" ? "&gt;" : ch === "&" ? "&amp;" : ch;
+    }
+    if (cur !== null) line += "</span>";
+    html += line + "\n";
+  }
+  return html;
+}
+
+const roseEl = document.getElementById("rose");
+const infoEl = document.getElementById("info");
+const t0 = performance.now();
+let last = 0;
+function loop(now) {
+  const el = (now - t0)/1000;
+  const open = ease(clamp(el/DUREE, 0, 1));
+  if (now - last > 80) { roseEl.innerHTML = buildFrame(open, now); last = now; }
+  infoEl.textContent = open < 0.995 ? `la rose s'ouvre   ${Math.round(open*100)}%   ·   ${Math.floor(el)}s` : `épanouie   ·   ${Math.floor(el)}s`;
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
